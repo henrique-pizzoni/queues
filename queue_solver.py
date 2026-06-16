@@ -1,0 +1,285 @@
+import math
+from abc import ABC, abstractmethod
+
+# --- Helpers de Probabilidade ---
+def prob_mm1(rho, n, operador):
+    if operador == "=": return (1 - rho) * (rho ** n)
+    elif operador == ">": return rho ** (n + 1)
+    elif operador == ">=": return rho ** n
+    elif operador == "<": return 1 - (rho ** n)
+    elif operador == "<=": return 1 - (rho ** (n + 1))
+    return 0.0
+
+def prob_mms_exata(lam, mu, s, p0, i):
+    if i <= s:
+        return (((lam / mu) ** i) / math.factorial(i)) * p0
+    else:
+        return (((lam / mu) ** i) / (math.factorial(s) * (s ** (i - s)))) * p0
+
+def prob_mms_acumulada(lam, mu, s, p0, n, operador):
+    if operador == "=": return prob_mms_exata(lam, mu, s, p0, n)
+    elif operador in ["<", "<="]:
+        limite = n if operador == "<=" else n - 1
+        if limite < 0: return 0.0
+        return sum(prob_mms_exata(lam, mu, s, p0, i) for i in range(limite + 1))
+    elif operador in [">", ">="]:
+        limite = n if operador == ">" else n - 1
+        if limite < 0: return 1.0
+        return 1.0 - sum(prob_mms_exata(lam, mu, s, p0, i) for i in range(limite + 1))
+    return 0.0
+
+# --- Classes dos Modelos ---
+class QueueModel(ABC):
+    @abstractmethod
+    def calcular(self, t=0.0, n=0, op_n="=") -> dict:
+        pass
+
+class MM1(QueueModel):
+    def __init__(self, lam: float, mu: float):
+        self.lam = lam
+        self.mu = mu
+
+    def calcular(self, t=0.0, n=0, op_n="=") -> dict:
+        if self.mu <= 0 or self.lam >= self.mu:
+            return {"Erro": "Sistema instável (λ >= μ) ou parâmetros inválidos."}
+        
+        rho = self.lam / self.mu
+        p0 = 1 - rho
+        L = self.lam / (self.mu - self.lam)
+        Lq = (self.lam ** 2) / (self.mu * (self.mu - self.lam))
+        W = 1 / (self.mu - self.lam)
+        Wq = self.lam / (self.mu * (self.mu - self.lam))
+        
+        pn_calc = prob_mm1(rho, n, op_n)
+        p_w_gt_t = math.exp(-self.mu * (1 - rho) * t)
+        p_wq_gt_t = rho * math.exp(-self.mu * (1 - rho) * t)
+        
+        return {
+            "Ocupação (ρ)": rho, "P0": p0, "L": L, "Lq": Lq, "W": W, "Wq": Wq,
+            f"Prob. n {op_n} {n}": pn_calc, f"Prob. W > {t}": p_w_gt_t, f"Prob. Wq > {t}": p_wq_gt_t
+        }
+
+class MMs(QueueModel):
+    def __init__(self, lam: float, mu: float, s: int):
+        self.lam = lam
+        self.mu = mu
+        self.s = s
+
+    def calcular(self, t=0.0, n=0, op_n="=") -> dict:
+        if self.mu <= 0 or self.lam >= (self.s * self.mu):
+            return {"Erro": "Sistema instável (λ >= s*μ)."}
+        
+        rho = self.lam / (self.s * self.mu)
+        
+        sum_p0 = sum(((self.lam / self.mu) ** i) / math.factorial(i) for i in range(self.s))
+        last_term = (((self.lam / self.mu) ** self.s) / math.factorial(self.s)) * (1 / (1 - rho))
+        p0 = 1 / (sum_p0 + last_term)
+            
+        Lq = (p0 * ((self.lam / self.mu) ** self.s) * rho) / (math.factorial(self.s) * ((1 - rho) ** 2))
+        Wq = Lq / self.lam
+        W = Wq + (1 / self.mu)
+        L = self.lam * W
+        
+        pn_calc = prob_mms_acumulada(self.lam, self.mu, self.s, p0, n, op_n)
+        
+        p_wq_0 = sum((((self.lam / self.mu) ** i) / math.factorial(i)) * p0 for i in range(self.s))
+        p_wq_gt_t = (1 - p_wq_0) * math.exp(-self.s * self.mu * (1 - rho) * t)
+        
+        denom = self.s - 1 - (self.lam / self.mu)
+        if abs(denom) < 1e-9:
+            term = self.mu * t
+        else:
+            term = (1 - math.exp(-self.mu * t * denom)) / denom
+        p_w_gt_t = math.exp(-self.mu * t) * (1 + ((p0 * ((self.lam / self.mu) ** self.s)) / (math.factorial(self.s) * (1 - rho))) * term)
+        
+        return {
+            "Ocupação (ρ)": rho, "P0": p0, "L": L, "Lq": Lq, "W": W, "Wq": Wq,
+            f"Prob. n {op_n} {n}": pn_calc, f"Prob. W > {t}": p_w_gt_t, f"Prob. Wq > {t}": p_wq_gt_t
+        }
+
+class MG1(QueueModel):
+    def __init__(self, lam: float, mu: float, sigma2: float):
+        self.lam = lam
+        self.mu = mu
+        self.sigma2 = sigma2
+
+    def calcular(self, t=0.0, n=0, op_n="=") -> dict:
+        if self.mu <= 0 or self.lam >= self.mu:
+            return {"Erro": "Sistema instável (λ >= μ)."}
+        
+        rho = self.lam / self.mu
+        p0 = 1 - rho
+        Lq = ((self.lam ** 2) * self.sigma2 + rho ** 2) / (2 * (1 - rho))
+        Wq = Lq / self.lam
+        W = Wq + (1 / self.mu)
+        L = rho + Lq
+        
+        return {"Ocupação (ρ)": rho, "P0": p0, "L": L, "Lq": Lq, "W": W, "Wq": Wq}
+
+class MM1K(QueueModel):
+    def __init__(self, lam: float, mu: float, k: int):
+        self.lam = lam
+        self.mu = mu
+        self.k = k
+
+    def calcular(self, t=0.0, n=0, op_n="=") -> dict:
+        rho = self.lam / self.mu
+        if rho == 1:
+            p0 = 1 / (self.k + 1)
+            pk = p0
+            L = self.k / 2
+        else:
+            p0 = (1 - rho) / (1 - rho ** (self.k + 1))
+            pk = p0 * (rho ** self.k)
+            L = (rho / (1 - rho)) - ((self.k + 1) * (rho ** (self.k + 1)) / (1 - rho ** (self.k + 1)))
+        
+        lambda_bar = self.lam * (1 - pk)
+        if lambda_bar > 0:
+            W = L / lambda_bar
+            Wq = W - (1 / self.mu)
+            Lq = lambda_bar * Wq
+        else:
+            W, Wq, Lq = 0, 0, 0
+            
+        return {"Ocupação (ρ)": 1 - p0, "P0": p0, "Pk (Prob. Rejeição)": pk, "L": L, "Lq": Lq, "W": W, "Wq": Wq}
+
+class MM1N(QueueModel):
+    def __init__(self, lam: float, mu: float, n: int):
+        self.lam = lam
+        self.mu = mu
+        self.n = n
+
+    def calcular(self, t=0.0, n=0, op_n="=") -> dict:
+        sum_p0 = sum((math.factorial(self.n) / math.factorial(self.n - i)) * ((self.lam / self.mu) ** i) for i in range(self.n + 1))
+        p0 = 1 / sum_p0
+        
+        L = self.n - (self.mu / self.lam) * (1 - p0)
+        lambda_bar = self.lam * (self.n - L)
+        
+        if lambda_bar > 0:
+            W = L / lambda_bar
+            Lq = self.n - ((self.lam + self.mu) / self.lam) * (1 - p0)
+            Wq = Lq / lambda_bar
+        else:
+            W, Wq, Lq = 0, 0, 0
+            
+        return {"Ocupação (ρ)": 1 - p0, "P0": p0, "L": L, "Lq": Lq, "W": W, "Wq": Wq}
+
+class PriorityNonPreemptive(QueueModel):
+    """Modelo com Prioridades SEM Interrupção"""
+    def __init__(self, lambdas: list, mu: float, s: int):
+        self.lambdas = lambdas
+        self.mu = mu
+        self.s = s
+
+    def calcular(self, t=0.0, n=0, op_n="=") -> dict:
+        lam_total = sum(self.lambdas)
+        if self.mu <= 0 or lam_total >= (self.s * self.mu):
+            return {"Erro": "Sistema instável (A soma dos λs é maior que s*μ)."}
+
+        r = lam_total / self.mu
+        
+        # Denominador do W_k baseado no slide 11
+        sum_j = sum((r ** j) / math.factorial(j) for j in range(self.s))
+        term1 = (math.factorial(self.s) * ((self.s * self.mu) - lam_total) / (r ** self.s)) * sum_j + (self.s * self.mu)
+        
+        resultados_classes = []
+        a_k_minus_1 = 0.0
+        
+        for i, lam_k in enumerate(self.lambdas):
+            a_k = a_k_minus_1 + lam_k
+            denom = term1 * (1 - (a_k_minus_1 / (self.s * self.mu))) * (1 - (a_k / (self.s * self.mu)))
+            
+            w_k = (1 / denom) + (1 / self.mu)
+            wq_k = w_k - (1 / self.mu)
+            l_k = lam_k * w_k
+            lq_k = lam_k * wq_k
+            
+            resultados_classes.append({
+                "Classe": f"Classe {i + 1}",
+                "λ": lam_k,
+                "W": round(w_k, 5),
+                "Wq": round(wq_k, 5),
+                "L": round(l_k, 5),
+                "Lq": round(lq_k, 5)
+            })
+            a_k_minus_1 = a_k
+            
+        L_total = sum(c["L"] for c in resultados_classes)
+        Lq_total = sum(c["Lq"] for c in resultados_classes)
+        W_total = L_total / lam_total
+        Wq_total = Lq_total / lam_total
+        
+        return {
+            "Ocupação (ρ)": lam_total / (self.s * self.mu),
+            "L": L_total, "Lq": Lq_total, "W": W_total, "Wq": Wq_total,
+            "is_priority": True,
+            "classes": resultados_classes
+        }
+
+class PriorityPreemptive(QueueModel):
+    """Modelo com Prioridades COM Interrupção"""
+    def __init__(self, lambdas: list, mu: float, s: int):
+        self.lambdas = lambdas
+        self.mu = mu
+        self.s = s
+
+    def calcular(self, t=0.0, n=0, op_n="=") -> dict:
+        lam_total = sum(self.lambdas)
+        if self.mu <= 0 or lam_total >= (self.s * self.mu):
+            return {"Erro": "Sistema instável (A soma dos λs é maior que s*μ)."}
+
+        resultados_classes = []
+        a_k_minus_1 = 0.0
+        
+        for i, lam_k in enumerate(self.lambdas):
+            a_k = a_k_minus_1 + lam_k
+            
+            # Cálculo de W_k baseado no slide 10
+            denom = (1 - (a_k_minus_1 / (self.s * self.mu))) * (1 - (a_k / (self.s * self.mu)))
+            w_k = (1 / self.mu) / denom
+            wq_k = w_k - (1 / self.mu)
+            l_k = lam_k * w_k
+            lq_k = lam_k * wq_k
+            
+            resultados_classes.append({
+                "Classe": f"Classe {i + 1}",
+                "λ": lam_k,
+                "W": round(w_k, 5),
+                "Wq": round(wq_k, 5),
+                "L": round(l_k, 5),
+                "Lq": round(lq_k, 5)
+            })
+            a_k_minus_1 = a_k
+            
+        L_total = sum(c["L"] for c in resultados_classes)
+        Lq_total = sum(c["Lq"] for c in resultados_classes)
+        W_total = L_total / lam_total
+        Wq_total = Lq_total / lam_total
+        
+        return {
+            "Ocupação (ρ)": lam_total / (self.s * self.mu),
+            "L": L_total, "Lq": Lq_total, "W": W_total, "Wq": Wq_total,
+            "is_priority": True,
+            "classes": resultados_classes
+        }
+
+# --- Funções de Engenharia Reversa (Módulo Investigador) ---
+def reverse_rho_wq(rho, wq):
+    mu = rho / (wq * (1 - rho))
+    lam = rho * mu
+    return lam, mu
+
+def reverse_w_lq(w, lq):
+    a = w ** 2
+    b = -lq * w
+    c = -lq
+    delta = (b ** 2) - (4 * a * c)
+    if delta < 0: return None, None
+    lam = (-b + math.sqrt(delta)) / (2 * a)
+    mu = lam + (1 / w)
+    return lam, mu
+
+def reverse_mu_wq(mu, wq):
+    lam = (wq * (mu ** 2)) / (1 + wq * mu)
+    return lam, mu
