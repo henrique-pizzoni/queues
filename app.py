@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from queue_solver import (
-    MM1, MMs, MG1, MM1K, MM1N, PriorityNonPreemptive, PriorityPreemptive,
+    MM1, MMs, MG1, MM1K, MM1N, PriorityNonPreemptive, PriorityPreemptive, PriorityMG1,
     reverse_rho_wq, reverse_w_lq, reverse_mu_wq
 )
 
@@ -24,14 +24,16 @@ with tab1:
             "M/M/s/K (Capacidade Finita)",
             "M/M/s/N (População Finita)",
             "Prioridades (Sem Interrupção)",
-            "Prioridades (Com Interrupção)"
+            "Prioridades (Com Interrupção)",
+            "Prioridades M/G/1 (Variâncias Distintas)"
         ]
         modelo_selecionado = st.selectbox("Tipo de Fila", opcoes_modelos)
         
         st.markdown("---")
-        mu = st.number_input("Taxa de Atendimento (μ)", min_value=0.001, value=15.0, step=0.1)
+        mu = st.number_input("Taxa de Atendimento Global (μ)", min_value=0.001, value=15.0, step=0.1)
         
-        lam, s, sigma2, k, pop_n, lambdas_prioridade = None, None, None, None, None, []
+        lam, s, sigma2, k, pop_n = None, None, None, None, None
+        lambdas_prioridade, mus_prioridade, vars_prioridade = [], [], []
         
         # Se for um modelo normal, pede um único λ
         if "Prioridade" not in modelo_selecionado:
@@ -42,7 +44,7 @@ with tab1:
             s = st.number_input("Número de Servidores (s)", min_value=2, value=2, step=1)
             
         elif modelo_selecionado == "M/G/1 (Tempo Genérico)":
-            sigma2 = st.number_input("Variância do Atendimento (σ²)", min_value=0.0, value=0.05, format="%.4f")
+            sigma2 = st.number_input("Variância do Atendimento (σ²)", min_value=0.0, value=0.05, format="%.5f")
             
         elif modelo_selecionado == "M/M/s/K (Capacidade Finita)":
             s = st.number_input("Número de Servidores (s)", min_value=1, value=1, step=1)
@@ -51,18 +53,59 @@ with tab1:
         elif modelo_selecionado == "M/M/s/N (População Finita)":
             s = st.number_input("Número de Servidores (s)", min_value=1, value=1, step=1)
             pop_n = st.number_input("Tamanho da População (N)", min_value=s, value=max(10, s), step=1)
-            
+            st.markdown("---")
+
+            usar_custos = st.checkbox(
+                "Calcular custos operacionais"
+            )
+
+            custo_maquina = None
+            custo_servidor = None
+            horas_dia = None
+
+            if usar_custos:
+
+                custo_maquina = st.number_input(
+                    "Custo Máquina Parada (R$/h)",
+                    min_value=0.0,
+                    value=30.0
+                )
+
+                custo_servidor = st.number_input(
+                    "Custo Servidor/Técnico (R$/h)",
+                    min_value=0.0,
+                    value=10.0
+                )
+
+                horas_dia = st.number_input(
+                    "Horas por Dia",
+                    min_value=1.0,
+                    value=8.0
+                )
         elif "Prioridade" in modelo_selecionado:
-            s = st.number_input("Número de Servidores (s)", min_value=1, value=1, step=1)
-            num_classes = st.number_input("Número de Classes de Prioridade", min_value=2, max_value=5, value=3, step=1)
+            if modelo_selecionado == "Prioridades M/G/1 (Variâncias Distintas)":
+                st.info("Modelo de 1 Servidor onde cada classe possui seu próprio Tempo de Atendimento (μ) e Variância (σ²). O 'μ Global' digitado acima será ignorado.")
+                s = 1
+            else:
+                s = st.number_input("Número de Servidores (s)", min_value=1, value=1, step=1)
+                
+            num_classes = st.number_input("Número de Classes de Prioridade", min_value=2, max_value=5, value=2, step=1)
             
-            st.write("**Taxas de Chegada por Classe (Ordem: 1 é a mais alta)**")
+            st.write("**Parâmetros por Classe (Ordem: 1 é a mais alta)**")
             for i in range(num_classes):
-                lam_i = st.number_input(f"Taxa de Chegada Classe {i+1} (λ{i+1})", min_value=0.001, value=5.0, step=0.1)
+                c1, c2, c3 = st.columns(3)
+                lam_i = c1.number_input(f"λ (Classe {i+1})", min_value=0.001, value=5.0, step=0.1, key=f"lam_pri_{i}")
                 lambdas_prioridade.append(lam_i)
+                
+                # Exibe inputs de mu e variância individualizados SOMENTE se for o modelo M/G/1 de prioridades
+                if modelo_selecionado == "Prioridades M/G/1 (Variâncias Distintas)":
+                    mu_i = c2.number_input(f"μ (Classe {i+1})", min_value=0.001, value=15.0, step=0.1, key=f"mu_pri_{i}")
+                    var_i = c3.number_input(f"σ² (Classe {i+1})", min_value=0.0, value=0.05, format="%.5f", key=f"var_pri_{i}")
+                    mus_prioridade.append(mu_i)
+                    vars_prioridade.append(var_i)
 
         # Campos de Probabilidade para modelos que suportam
-        if "Prioridade" not in modelo_selecionado and modelo_selecionado not in ["M/G/1 (Tempo Genérico)", "M/M/1/K (Capacidade Finita)", "M/M/1/N (População Finita)"]:
+        if "Prioridade" not in modelo_selecionado and modelo_selecionado != "M/G/1 (Tempo Genérico)":
             st.markdown("---")
             st.write("**Parâmetros de Probabilidade**")
             c_op, c_n = st.columns([1, 1])
@@ -93,33 +136,100 @@ with tab1:
             solver = PriorityNonPreemptive(lambdas_prioridade, mu, s)
         elif modelo_selecionado == "Prioridades (Com Interrupção)":
             solver = PriorityPreemptive(lambdas_prioridade, mu, s)
+        elif modelo_selecionado == "Prioridades M/G/1 (Variâncias Distintas)":
+            solver = PriorityMG1(lambdas_prioridade, mus_prioridade, vars_prioridade)
             
-        resultados = solver.calcular(t=t, n=n, op_n=op_n)
-        
+        if modelo_selecionado == "M/M/s/N (População Finita)":
+
+            resultados = solver.calcular(
+                t=t,
+                n=n,
+                op_n=op_n,
+                custo_maquina_hora=custo_maquina,
+                custo_servidor_hora=custo_servidor,
+                horas_dia=horas_dia
+            )
+
+        else:
+
+            resultados = solver.calcular(
+                t=t,
+                n=n,
+                op_n=op_n
+            )
+            
         if "Erro" in resultados:
             st.error(resultados["Erro"])
         else:
             st.success(f"Cálculos realizados usando o motor: **{solver.__class__.__name__}**")
             
             c1, c2, c3 = st.columns(3)
-            c1.metric("Taxa de Ocupação Sistémica (ρ)", f"{resultados.get('Ocupação (ρ)', 0):.4f}")
-            if "P0" in resultados: c2.metric("Prob. Vazio (P0)", f"{resultados['P0']:.4f}")
-            if "Pk (Prob. Rejeição)" in resultados: c3.metric("Prob. Rejeição (Pk)", f"{resultados['Pk (Prob. Rejeição)']:.4f}")
+            c1.metric("Taxa de Ocupação Sistémica (ρ)", f"{resultados.get('Ocupação (ρ)', 0):.5f}")
+            if "P0" in resultados: c2.metric("Prob. Vazio (P0)", f"{resultados['P0']:.5f}")
+            if "Pk (Prob. Rejeição)" in resultados: c3.metric("Prob. Rejeição (Pk)", f"{resultados['Pk (Prob. Rejeição)']:.5f}")
                 
             st.markdown("---")
             c4, c5 = st.columns(2)
             with c4:
                 st.info("📍 **Métricas Globais (Média de Todas as Classes)**")
-                st.metric("Nº Médio no Sistema (L)", f"{resultados.get('L', 0):.4f}")
-                st.metric("Nº Médio na Fila (Lq)", f"{resultados.get('Lq', 0):.4f}")
-                
+                st.metric("Nº Médio no Sistema (L)", f"{resultados.get('L', 0):.5f}")
+                st.metric("Nº Médio na Fila (Lq)", f"{resultados.get('Lq', 0):.5f}")
+                if "Custo Hora" in resultados:
+
+                    st.markdown("---")
+
+                    st.success("💰 Custos Operacionais")
+
+                    cc1, cc2 = st.columns(2)
+
+                    cc1.metric(
+                        "Custo por Hora",
+                        f"R$ {resultados['Custo Hora']:.5f}"
+                    )
+
+                    if "Custo Diário" in resultados:
+
+                        cc2.metric(
+                            "Custo Diário",
+                            f"R$ {resultados['Custo Diário']:.5f}"
+                        )
+                    
             with c5:
                 st.warning("⏱️ **Tempos Globais de Espera**")
-                st.metric("Tempo Médio no Sist. (W)", f"{resultados.get('W', 0):.4f}")
-                st.metric("Tempo Médio na Fila (Wq)", f"{resultados.get('Wq', 0):.4f}")
+                st.metric("Tempo Médio no Sist. (W)", f"{resultados.get('W', 0):.5f}")
+                st.metric("Tempo Médio na Fila (Wq)", f"{resultados.get('Wq', 0):.5f}")
+                if "Máquinas Operando" in resultados:
+                    st.metric(
+                        "Máquinas Operando",
+                        f"{resultados['Máquinas Operando']:.5f}"
+                    )
+
+                if "Utilização Servidor" in resultados:
+                    st.metric(
+                        "Utilização Servidor",
+                        f"{resultados['Utilização Servidor']:.5f}"
+                    )
 
             # Renderização Específica para Filas com Prioridade
             if resultados.get("is_priority"):
+                if "Pn" in resultados:
+
+                    st.markdown("---")
+
+                    st.success("📊 Distribuição de Probabilidades")
+
+                    df_prob = pd.DataFrame({
+                        "Estado": list(range(len(resultados["Pn"]))),
+                        "Probabilidade": resultados["Pn"]
+                    })
+
+                    df_prob["Probabilidade"] = df_prob["Probabilidade"].round(5)
+
+                    st.dataframe(
+                        df_prob,
+                        use_container_width=True,
+                        hide_index=True
+                    )
                 st.markdown("---")
                 st.success("🏆 **Métricas Específicas por Classe de Prioridade**")
                 df = pd.DataFrame(resultados["classes"])
@@ -132,10 +242,11 @@ with tab1:
                 st.markdown("---")
                 st.success("🎲 **Probabilidades Específicas**")
                 cp1, cp2, cp3 = st.columns(3)
-                if prob_n_key: cp1.metric(prob_n_key[0], f"{resultados[prob_n_key[0]]:.4f}")
-                if prob_w_key: cp2.metric(prob_w_key[0], f"{resultados[prob_w_key[0]]:.4f}")
+                if prob_n_key: cp1.metric(prob_n_key[0], f"{resultados[prob_n_key[0]]:.5f}")
+                if prob_w_key: cp2.metric(prob_w_key[0], f"{resultados[prob_w_key[0]]:.5f}")
                 prob_wq_key = [k for k in resultados.keys() if "Prob. Wq >" in k]
-                if prob_wq_key: cp3.metric(prob_wq_key[0], f"{resultados[prob_wq_key[0]]:.4f}")
+                if prob_wq_key: cp3.metric(prob_wq_key[0], f"{resultados[prob_wq_key[0]]:.5f}")
+
 with tab2:
     st.markdown("Use esta aba para cenários M/M/1 onde λ e μ **não são fornecidos diretamente** (Engenharia Reversa).")
     
@@ -170,12 +281,12 @@ with tab2:
     with col_res:
         if lam_rev and mu_rev:
             st.success("✅ Parâmetros Encontrados!")
-            st.metric("Taxa de Chegada Calculada (λ)", f"{lam_rev:.4f}")
-            st.metric("Taxa de Atendimento Calculada (μ)", f"{mu_rev:.4f}")
+            st.metric("Taxa de Chegada Calculada (λ)", f"{lam_rev:.5f}")
+            st.metric("Taxa de Atendimento Calculada (μ)", f"{mu_rev:.5f}")
             
             res_rev = MM1(lam_rev, mu_rev).calcular()
             
-            st.write(f"**L:** {res_rev['L']:.4f} | **Lq:** {res_rev['Lq']:.4f}")
-            st.write(f"**W:** {res_rev['W']:.4f} | **Wq:** {res_rev['Wq']:.4f}")
+            st.write(f"**L:** {res_rev['L']:.5f} | **Lq:** {res_rev['Lq']:.5f}")
+            st.write(f"**W:** {res_rev['W']:.5f} | **Wq:** {res_rev['Wq']:.5f}")
         else:
             st.error("Valores inseridos não geram um sistema válido.")

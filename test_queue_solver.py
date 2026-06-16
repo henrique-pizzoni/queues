@@ -420,5 +420,88 @@ class TestHelpers(unittest.TestCase):
             )
 
 
+
+
+class TestExerciciosAdicionais(unittest.TestCase):
+
+    def test_industria_metal_mecanica_custo_total(self):
+        """
+        Lista M/M/sN, ex. 1
+        Custo diário:
+        CT = 219,192
+        """
+        r = MM1N(lam=1/200, mu=0.1, n=10).calcular()
+
+        L = r["L"]
+
+        custo_paradas = L * 30 * 8
+        custo_manutencao = (1 - r["P0"]) * 10 * 8
+
+        ct = custo_paradas + custo_manutencao
+
+        self.assertAlmostEqual(ct, 219.1862, places=3)
+
+    def test_duas_maquinas_tecnico_ocupado(self):
+        """
+        Lista M/M/sN, ex. 3 letra C
+        Proporção do tempo que o técnico está ocupado.
+        Resultado esperado = 0,7423
+        """
+        r = MM1N(lam=0.1, mu=0.125, n=2).calcular()
+
+        ocupacao = 1 - r["P0"]
+
+        self.assertAlmostEqual(ocupacao, 0.7423, places=4)
+
+    def test_duas_maquinas_operando(self):
+        """
+        Lista M/M/sN, ex. 3 letra D
+        Proporção de tempo que uma máquina está operando.
+        Resultado esperado = 0,464
+        """
+        r = MM1N(lam=0.1, mu=0.125, n=2).calcular()
+
+        disponibilidade = (2 - r["L"]) / 2
+
+        self.assertAlmostEqual(disponibilidade, 0.464, places=3)
+
+    def test_industria_metal_mecanica_maquinas_operando(self):
+        """
+        Lista M/M/sN, ex. 1
+        Disponibilidade média das máquinas.
+        """
+        r = MM1N(lam=1/200, mu=0.1, n=10).calcular()
+
+        disponibilidade = (10 - r["L"]) / 10
+
+        self.assertAlmostEqual(disponibilidade, 0.92407, places=4)
+
+    def test_industria_metal_mecanica_tecnico_ocupado(self):
+        """
+        Lista M/M/sN, ex. 1
+        Utilização do técnico.
+        """
+        r = MM1N(lam=1/200, mu=0.1, n=10).calcular()
+
+        ocupacao = 1 - r["P0"]
+
+        self.assertAlmostEqual(ocupacao, 0.4620, places=4)
+
+    def test_duas_maquinas_consistencia_disponibilidade(self):
+        """
+        Lista M/M/sN, ex. 3
+
+        Disponibilidade calculada por:
+            (N - L)/N
+
+        Deve coincidir com o gabarito.
+        """
+        r = MM1N(lam=0.1, mu=0.125, n=2).calcular()
+
+        disponibilidade = (2 - r["L"]) / 2
+
+        self.assertAlmostEqual(disponibilidade, 0.464, places=3)
+
+
 if __name__ == "__main__":
-    unittest.main(verbosity=2)
+    unittest.main(verbosity=2)        
