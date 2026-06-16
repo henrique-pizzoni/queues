@@ -222,11 +222,25 @@ class PriorityNonPreemptive(QueueModel):
         }
 
 class PriorityPreemptive(QueueModel):
-    """Modelo com Prioridades COM Interrupção"""
+    """Modelo com Prioridades COM Interrupção (Correção Exata para S > 1)"""
     def __init__(self, lambdas: list, mu: float, s: int):
         self.lambdas = lambdas
         self.mu = mu
         self.s = s
+
+    def _get_mms_W(self, lam_agg: float) -> float:
+        """Helper interno: Calcula o W de um modelo M/M/s normal dado um lambda misturado"""
+        if lam_agg == 0: return 1 / self.mu
+        rho = lam_agg / (self.s * self.mu)
+        
+        # Fórmula clássica do M/M/s
+        sum_p0 = sum(((lam_agg / self.mu) ** i) / math.factorial(i) for i in range(self.s))
+        last_term = (((lam_agg / self.mu) ** self.s) / math.factorial(self.s)) * (1 / (1 - rho))
+        p0 = 1 / (sum_p0 + last_term)
+        
+        lq = (p0 * ((lam_agg / self.mu) ** self.s) * rho) / (math.factorial(self.s) * ((1 - rho) ** 2))
+        w = (lq / lam_agg) + (1 / self.mu)
+        return w
 
     def calcular(self, t=0.0, n=0, op_n="=") -> dict:
         lam_total = sum(self.lambdas)
@@ -240,36 +254,41 @@ class PriorityPreemptive(QueueModel):
         #   W_k = (A_k·W̄_k - A_{k-1}·W̄_{k-1}) / λ_k
         # Para s=1 isto reduz à fórmula fechada (1/μ)/[(1-A_{k-1}/sμ)(1-A_k/sμ)].
         resultados_classes = []
-        L_total = Lq_total = 0.0
-        a_k_minus_1 = 0.0
-        wbar_k_minus_1 = 0.0
-
+        sum_lam_prev = 0
+        sum_lam_W_prev = 0
+        
         for i, lam_k in enumerate(self.lambdas):
-            a_k = a_k_minus_1 + lam_k
-
-            if self.s == 1:
-                wbar_k = 1 / (self.mu - a_k)
-            else:
-                _, _, _, _, wbar_k, _ = mms_metrics(a_k, self.mu, self.s)
-
-            w_k = (a_k * wbar_k - a_k_minus_1 * wbar_k_minus_1) / lam_k
+            sum_lam_curr = sum_lam_prev + lam_k
+            
+            # Passo 1: Descobrir o W médio agregado das classes 1 até k 
+            # (Igual ao W_1-2 barra do seu slide)
+            w_agg = self._get_mms_W(sum_lam_curr)
+            
+            # Passo 2: Isolar o W_k usando a média ponderada
+            # Equação baseada no W2 do slide: W2 = [ W_agg*(L1+L2) - W1*(L1) ] / L2
+            w_k = ((w_agg * sum_lam_curr) - sum_lam_W_prev) / lam_k
+            
             wq_k = w_k - (1 / self.mu)
-            l_k = lam_k * w_k
-            lq_k = lam_k * wq_k
-            L_total += l_k
-            Lq_total += lq_k
-
+            
+            # Passo 3: Peculiaridade do cálculo acumulado de L e Lq do Slide 17
+            l_k = sum_lam_curr * w_k
+            lq_k = l_k - (sum_lam_curr / self.mu)
+            
             resultados_classes.append({
                 "Classe": f"Classe {i + 1}",
                 "λ": lam_k,
                 "W": round(w_k, 5),
                 "Wq": round(wq_k, 5),
-                "L": round(l_k, 5),
-                "Lq": round(lq_k, 5)
+                "L": round(l_k, 5),     
+                "Lq": round(lq_k, 5)    
             })
-            a_k_minus_1 = a_k
-            wbar_k_minus_1 = wbar_k
-
+            
+            # Guarda a somatória ponderada para a próxima iteração
+            sum_lam_prev = sum_lam_curr
+            sum_lam_W_prev += lam_k * w_k
+            
+        L_total = sum(c["L"] for c in resultados_classes)
+        Lq_total = sum(c["Lq"] for c in resultados_classes)
         W_total = L_total / lam_total
         Wq_total = Lq_total / lam_total
 
