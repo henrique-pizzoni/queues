@@ -28,6 +28,18 @@ def prob_mms_acumulada(lam, mu, s, p0, n, operador):
         return 1.0 - sum(prob_mms_exata(lam, mu, s, p0, i) for i in range(limite + 1))
     return 0.0
 
+def mms_metrics(lam, mu, s):
+    """Métricas básicas de um sistema M/M/s estável: retorna (rho, p0, Lq, Wq, W, L)."""
+    rho = lam / (s * mu)
+    sum_p0 = sum(((lam / mu) ** i) / math.factorial(i) for i in range(s))
+    last_term = (((lam / mu) ** s) / math.factorial(s)) * (1 / (1 - rho))
+    p0 = 1 / (sum_p0 + last_term)
+    Lq = (p0 * ((lam / mu) ** s) * rho) / (math.factorial(s) * ((1 - rho) ** 2))
+    Wq = Lq / lam
+    W = Wq + (1 / mu)
+    L = lam * W
+    return rho, p0, Lq, Wq, W, L
+
 # --- Classes dos Modelos ---
 class QueueModel(ABC):
     @abstractmethod
@@ -68,18 +80,9 @@ class MMs(QueueModel):
     def calcular(self, t=0.0, n=0, op_n="=") -> dict:
         if self.mu <= 0 or self.lam >= (self.s * self.mu):
             return {"Erro": "Sistema instável (λ >= s*μ)."}
-        
-        rho = self.lam / (self.s * self.mu)
-        
-        sum_p0 = sum(((self.lam / self.mu) ** i) / math.factorial(i) for i in range(self.s))
-        last_term = (((self.lam / self.mu) ** self.s) / math.factorial(self.s)) * (1 / (1 - rho))
-        p0 = 1 / (sum_p0 + last_term)
-            
-        Lq = (p0 * ((self.lam / self.mu) ** self.s) * rho) / (math.factorial(self.s) * ((1 - rho) ** 2))
-        Wq = Lq / self.lam
-        W = Wq + (1 / self.mu)
-        L = self.lam * W
-        
+
+        rho, p0, Lq, Wq, W, L = mms_metrics(self.lam, self.mu, self.s)
+
         pn_calc = prob_mms_acumulada(self.lam, self.mu, self.s, p0, n, op_n)
         
         p_wq_0 = sum((((self.lam / self.mu) ** i) / math.factorial(i)) * p0 for i in range(self.s))
@@ -124,7 +127,7 @@ class MM1K(QueueModel):
 
     def calcular(self, t=0.0, n=0, op_n="=") -> dict:
         rho = self.lam / self.mu
-        if rho == 1:
+        if abs(rho - 1) < 1e-9:
             p0 = 1 / (self.k + 1)
             pk = p0
             L = self.k / 2
@@ -184,17 +187,20 @@ class PriorityNonPreemptive(QueueModel):
         term1 = (math.factorial(self.s) * ((self.s * self.mu) - lam_total) / (r ** self.s)) * sum_j + (self.s * self.mu)
         
         resultados_classes = []
+        L_total = Lq_total = 0.0
         a_k_minus_1 = 0.0
-        
+
         for i, lam_k in enumerate(self.lambdas):
             a_k = a_k_minus_1 + lam_k
             denom = term1 * (1 - (a_k_minus_1 / (self.s * self.mu))) * (1 - (a_k / (self.s * self.mu)))
-            
+
             w_k = (1 / denom) + (1 / self.mu)
             wq_k = w_k - (1 / self.mu)
             l_k = lam_k * w_k
             lq_k = lam_k * wq_k
-            
+            L_total += l_k
+            Lq_total += lq_k
+
             resultados_classes.append({
                 "Classe": f"Classe {i + 1}",
                 "λ": lam_k,
@@ -204,12 +210,10 @@ class PriorityNonPreemptive(QueueModel):
                 "Lq": round(lq_k, 5)
             })
             a_k_minus_1 = a_k
-            
-        L_total = sum(c["L"] for c in resultados_classes)
-        Lq_total = sum(c["Lq"] for c in resultados_classes)
+
         W_total = L_total / lam_total
         Wq_total = Lq_total / lam_total
-        
+
         return {
             "Ocupação (ρ)": lam_total / (self.s * self.mu),
             "L": L_total, "Lq": Lq_total, "W": W_total, "Wq": Wq_total,
@@ -229,19 +233,32 @@ class PriorityPreemptive(QueueModel):
         if self.mu <= 0 or lam_total >= (self.s * self.mu):
             return {"Erro": "Sistema instável (A soma dos λs é maior que s*μ)."}
 
+        # Método exato para qualquer s (slides 16-17): sob prioridade com interrupção, o
+        # subsistema formado pelas classes 1..k é independente das de menor prioridade e se
+        # comporta como um M/M/s com chegada acumulada A_k. O tempo médio no sistema dessas
+        # classes combinadas, W̄_k, é o W de um M/M/s(A_k, μ, s). Isola-se W_k por classe via:
+        #   W_k = (A_k·W̄_k - A_{k-1}·W̄_{k-1}) / λ_k
+        # Para s=1 isto reduz à fórmula fechada (1/μ)/[(1-A_{k-1}/sμ)(1-A_k/sμ)].
         resultados_classes = []
+        L_total = Lq_total = 0.0
         a_k_minus_1 = 0.0
-        
+        wbar_k_minus_1 = 0.0
+
         for i, lam_k in enumerate(self.lambdas):
             a_k = a_k_minus_1 + lam_k
-            
-            # Cálculo de W_k baseado no slide 10
-            denom = (1 - (a_k_minus_1 / (self.s * self.mu))) * (1 - (a_k / (self.s * self.mu)))
-            w_k = (1 / self.mu) / denom
+
+            if self.s == 1:
+                wbar_k = 1 / (self.mu - a_k)
+            else:
+                _, _, _, _, wbar_k, _ = mms_metrics(a_k, self.mu, self.s)
+
+            w_k = (a_k * wbar_k - a_k_minus_1 * wbar_k_minus_1) / lam_k
             wq_k = w_k - (1 / self.mu)
             l_k = lam_k * w_k
             lq_k = lam_k * wq_k
-            
+            L_total += l_k
+            Lq_total += lq_k
+
             resultados_classes.append({
                 "Classe": f"Classe {i + 1}",
                 "λ": lam_k,
@@ -251,12 +268,11 @@ class PriorityPreemptive(QueueModel):
                 "Lq": round(lq_k, 5)
             })
             a_k_minus_1 = a_k
-            
-        L_total = sum(c["L"] for c in resultados_classes)
-        Lq_total = sum(c["Lq"] for c in resultados_classes)
+            wbar_k_minus_1 = wbar_k
+
         W_total = L_total / lam_total
         Wq_total = Lq_total / lam_total
-        
+
         return {
             "Ocupação (ρ)": lam_total / (self.s * self.mu),
             "L": L_total, "Lq": Lq_total, "W": W_total, "Wq": Wq_total,
