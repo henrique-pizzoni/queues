@@ -119,54 +119,85 @@ class MG1(QueueModel):
         
         return {"Ocupação (ρ)": rho, "P0": p0, "L": L, "Lq": Lq, "W": W, "Wq": Wq}
 
+def _metrics_from_weights(weights, s):
+    """Dado os pesos (probabilidades não-normalizadas) de cada estado n=0,1,...,
+    retorna (probs, L, Lq) já normalizados. Vale para qualquer nº de servidores s."""
+    total = sum(weights)
+    probs = [w / total for w in weights]
+    L = sum(n * p for n, p in enumerate(probs))
+    Lq = sum((n - s) * p for n, p in enumerate(probs) if n > s)
+    return probs, L, Lq
+
 class MM1K(QueueModel):
-    def __init__(self, lam: float, mu: float, k: int):
+    """M/M/s/K — fila com s servidores e capacidade máxima K (s=1 => M/M/1/K)."""
+    def __init__(self, lam: float, mu: float, k: int, s: int = 1):
         self.lam = lam
         self.mu = mu
         self.k = k
+        self.s = s
 
     def calcular(self, t=0.0, n=0, op_n="=") -> dict:
-        rho = self.lam / self.mu
-        if abs(rho - 1) < 1e-9:
-            p0 = 1 / (self.k + 1)
-            pk = p0
-            L = self.k / 2
-        else:
-            p0 = (1 - rho) / (1 - rho ** (self.k + 1))
-            pk = p0 * (rho ** self.k)
-            L = (rho / (1 - rho)) - ((self.k + 1) * (rho ** (self.k + 1)) / (1 - rho ** (self.k + 1)))
-        
+        if self.mu <= 0 or self.s < 1 or self.k < self.s:
+            return {"Erro": "Parâmetros inválidos (exige μ>0, s>=1 e K>=s)."}
+
+        a = self.lam / self.mu
+        weights = []
+        for i in range(self.k + 1):
+            if i <= self.s:
+                weights.append((a ** i) / math.factorial(i))
+            else:
+                weights.append((a ** i) / (math.factorial(self.s) * (self.s ** (i - self.s))))
+
+        probs, L, Lq = _metrics_from_weights(weights, self.s)
+        p0 = probs[0]
+        pk = probs[self.k]
+
         lambda_bar = self.lam * (1 - pk)
         if lambda_bar > 0:
             W = L / lambda_bar
-            Wq = W - (1 / self.mu)
-            Lq = lambda_bar * Wq
+            Wq = Lq / lambda_bar
         else:
-            W, Wq, Lq = 0, 0, 0
-            
-        return {"Ocupação (ρ)": 1 - p0, "P0": p0, "Pk (Prob. Rejeição)": pk, "L": L, "Lq": Lq, "W": W, "Wq": Wq}
+            W, Wq = 0, 0
+
+        rho = lambda_bar / (self.s * self.mu)
+        return {"Ocupação (ρ)": rho, "P0": p0, "Pk (Prob. Rejeição)": pk, "L": L, "Lq": Lq, "W": W, "Wq": Wq}
 
 class MM1N(QueueModel):
-    def __init__(self, lam: float, mu: float, n: int):
+    """M/M/s/N — população finita N com s servidores (s=1 => M/M/1/N)."""
+    def __init__(self, lam: float, mu: float, n: int, s: int = 1):
         self.lam = lam
         self.mu = mu
         self.n = n
+        self.s = s
 
     def calcular(self, t=0.0, n=0, op_n="=") -> dict:
-        sum_p0 = sum((math.factorial(self.n) / math.factorial(self.n - i)) * ((self.lam / self.mu) ** i) for i in range(self.n + 1))
-        p0 = 1 / sum_p0
-        
-        L = self.n - (self.mu / self.lam) * (1 - p0)
-        lambda_bar = self.lam * (self.n - L)
-        
+        if self.mu <= 0 or self.s < 1 or self.n < self.s:
+            return {"Erro": "Parâmetros inválidos (exige μ>0, s>=1 e N>=s)."}
+
+        a = self.lam / self.mu
+        N = self.n
+        weights = []
+        for i in range(N + 1):
+            if i <= self.s:
+                weights.append(math.comb(N, i) * (a ** i))
+            else:
+                weights.append(
+                    (math.factorial(N) / (math.factorial(N - i) * math.factorial(self.s) * (self.s ** (i - self.s))))
+                    * (a ** i)
+                )
+
+        probs, L, Lq = _metrics_from_weights(weights, self.s)
+        p0 = probs[0]
+
+        lambda_bar = self.lam * (N - L)
         if lambda_bar > 0:
             W = L / lambda_bar
-            Lq = self.n - ((self.lam + self.mu) / self.lam) * (1 - p0)
             Wq = Lq / lambda_bar
         else:
-            W, Wq, Lq = 0, 0, 0
-            
-        return {"Ocupação (ρ)": 1 - p0, "P0": p0, "L": L, "Lq": Lq, "W": W, "Wq": Wq}
+            W, Wq = 0, 0
+
+        rho = lambda_bar / (self.s * self.mu)
+        return {"Ocupação (ρ)": rho, "P0": p0, "L": L, "Lq": Lq, "W": W, "Wq": Wq}
 
 class PriorityNonPreemptive(QueueModel):
     """Modelo com Prioridades SEM Interrupção"""

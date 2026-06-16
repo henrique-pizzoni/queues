@@ -20,9 +20,9 @@ with tab1:
         opcoes_modelos = [
             "M/M/1 (Básico)", 
             "M/M/s (Múltiplos Servidores)", 
-            "M/G/1 (Tempo Genérico)", 
-            "M/M/1/K (Capacidade Finita)", 
-            "M/M/1/N (População Finita)",
+            "M/G/1 (Tempo Genérico)",
+            "M/M/s/K (Capacidade Finita)",
+            "M/M/s/N (População Finita)",
             "Prioridades (Sem Interrupção)",
             "Prioridades (Com Interrupção)"
         ]
@@ -44,11 +44,13 @@ with tab1:
         elif modelo_selecionado == "M/G/1 (Tempo Genérico)":
             sigma2 = st.number_input("Variância do Atendimento (σ²)", min_value=0.0, value=0.05, format="%.4f")
             
-        elif modelo_selecionado == "M/M/1/K (Capacidade Finita)":
-            k = st.number_input("Capacidade Máxima do Sistema (K)", min_value=1, value=5, step=1)
-            
-        elif modelo_selecionado == "M/M/1/N (População Finita)":
-            pop_n = st.number_input("Tamanho da População (N)", min_value=1, value=10, step=1)
+        elif modelo_selecionado == "M/M/s/K (Capacidade Finita)":
+            s = st.number_input("Número de Servidores (s)", min_value=1, value=1, step=1)
+            k = st.number_input("Capacidade Máxima do Sistema (K)", min_value=s, value=max(5, s), step=1)
+
+        elif modelo_selecionado == "M/M/s/N (População Finita)":
+            s = st.number_input("Número de Servidores (s)", min_value=1, value=1, step=1)
+            pop_n = st.number_input("Tamanho da População (N)", min_value=s, value=max(10, s), step=1)
             
         elif "Prioridade" in modelo_selecionado:
             s = st.number_input("Número de Servidores (s)", min_value=1, value=1, step=1)
@@ -83,10 +85,10 @@ with tab1:
             solver = MMs(lam, mu, s)
         elif modelo_selecionado == "M/G/1 (Tempo Genérico)":
             solver = MG1(lam, mu, sigma2)
-        elif modelo_selecionado == "M/M/1/K (Capacidade Finita)":
-            solver = MM1K(lam, mu, k)
-        elif modelo_selecionado == "M/M/1/N (População Finita)":
-            solver = MM1N(lam, mu, pop_n)
+        elif modelo_selecionado == "M/M/s/K (Capacidade Finita)":
+            solver = MM1K(lam, mu, k, s)
+        elif modelo_selecionado == "M/M/s/N (População Finita)":
+            solver = MM1N(lam, mu, pop_n, s)
         elif modelo_selecionado == "Prioridades (Sem Interrupção)":
             solver = PriorityNonPreemptive(lambdas_prioridade, mu, s)
         elif modelo_selecionado == "Prioridades (Com Interrupção)":
