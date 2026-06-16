@@ -176,7 +176,12 @@ class MM1K(QueueModel):
             W, Wq = 0, 0
 
         rho = lambda_bar / (self.s * self.mu)
-        return {"Ocupação (ρ)": rho, "P0": p0, "Pk (Prob. Rejeição)": pk, "L": L, "Lq": Lq, "W": W, "Wq": Wq}
+        pn_calc = prob_lista(probs, n, op_n)
+        return {
+            "Ocupação (ρ)": rho, "P0": p0, "Pk (Prob. Rejeição)": pk,
+            "L": L, "Lq": Lq, "W": W, "Wq": Wq,
+            f"Prob. n {op_n} {n}": pn_calc,
+        }
 
 class MM1N(QueueModel):
     def __init__(self, lam: float, mu: float, n: int, s: int = 1):

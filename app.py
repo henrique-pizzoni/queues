@@ -105,7 +105,11 @@ with tab1:
                     vars_prioridade.append(var_i)
 
         # Campos de Probabilidade para modelos que suportam
-        if "Prioridade" not in modelo_selecionado and modelo_selecionado != "M/G/1 (Tempo Genérico)":
+        # K e N têm espaço de estados finito: calculam P(n ...) mas não têm
+        # distribuição de tempo de espera (sem campo 't').
+        modelos_sem_prob = ["M/G/1 (Tempo Genérico)"]
+        modelos_so_prob_n = ["M/M/s/K (Capacidade Finita)", "M/M/s/N (População Finita)"]
+        if "Prioridade" not in modelo_selecionado and modelo_selecionado not in modelos_sem_prob:
             st.markdown("---")
             st.write("**Parâmetros de Probabilidade**")
             c_op, c_n = st.columns([1, 1])
@@ -113,7 +117,10 @@ with tab1:
                 op_n = st.selectbox("Operador", ["=", ">", ">=", "<", "<="])
             with c_n:
                 n = st.number_input("Clientes (n)", min_value=0, value=3, step=1)
-            t = st.number_input("Valor de tempo 't'", min_value=0.0, value=1.0, step=0.1)
+            if modelo_selecionado in modelos_so_prob_n:
+                t = 0.0
+            else:
+                t = st.number_input("Valor de tempo 't'", min_value=0.0, value=1.0, step=0.1)
         else:
             n, t, op_n = 0, 0.0, "="
 

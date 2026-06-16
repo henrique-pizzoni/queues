@@ -218,6 +218,55 @@ class TestMM1K(unittest.TestCase):
         # P(> 2 na fila) = P(sistema cheio) = Pk = 0,1037
         self.assertAlmostEqual(r["Pk (Prob. Rejeição)"], 0.1037, places=4)
 
+    def test_prob_n_no_sistema(self):
+        """Lista M/M/sk, ex. 1d: λ=2/min, μ=4/min, K=5 -> P(n=4)=0,03175.
+        Slide M/M/1/K, ex. 2d: λ=3/min, μ=4/min, K=5 -> P(n=4)=0,09623."""
+        r = MM1K(lam=2, mu=4, k=5).calcular(n=4, op_n="=")
+        self.assertAlmostEqual(r["Prob. n = 4"], 0.03175, places=5)
+        r = MM1K(lam=3, mu=4, k=5).calcular(n=4, op_n="=")
+        self.assertAlmostEqual(r["Prob. n = 4"], 0.09623, places=5)
+
+    def test_prob_acima_da_capacidade_e_zero(self):
+        """Num sistema de capacidade K, P(n > K) = 0 e P(n <= K) = 1."""
+        r = MM1K(lam=3, mu=4, k=5).calcular(n=5, op_n=">")
+        self.assertAlmostEqual(r["Prob. n > 5"], 0.0, places=10)
+        r = MM1K(lam=3, mu=4, k=5).calcular(n=5, op_n="<=")
+        self.assertAlmostEqual(r["Prob. n <= 5"], 1.0, places=10)
+
+    # ------------------------------------------------------------------
+    # Casos particulares com s > 1 (multi-servidor). ATENÇÃO: a capacidade
+    # total K do sistema é mantida ao adicionar servidores (vide slide, que
+    # pede "P5 para 1 e 2 atendentes"). Logo o aeroporto/lab com s=2 usa o
+    # MESMO K=4 da versão de 1 servidor, e não K=5.
+    # ------------------------------------------------------------------
+    def test_aeroporto_duas_pistas_s2(self):
+        """Lista M/M/sk, ex. 4: λ=0,25/min, μ=1/3/min, s=2, K=4."""
+        r = MM1K(lam=0.25, mu=1 / 3, k=4, s=2).calcular(n=4, op_n=">")
+        self.assertAlmostEqual(r["Lq"], 0.0848, places=4)
+        self.assertAlmostEqual(r["Wq"], 0.3455, places=4)
+        # P(> 2 na fila) = P(sistema cheio, n>4) = Pk = 0,0182
+        self.assertAlmostEqual(r["Pk (Prob. Rejeição)"], 0.0182, places=4)
+
+    def test_laboratorio_dois_equipamentos_s2(self):
+        """Lista M/M/sk, ex. 5: λ=1/h, μ=4/3/h, s=2, K=4."""
+        r = MM1K(lam=1, mu=4 / 3, k=4, s=2).calcular()
+        self.assertAlmostEqual(r["L"], 0.8212, places=4)
+        self.assertAlmostEqual(r["Pk (Prob. Rejeição)"], 0.0182, places=4)
+        self.assertAlmostEqual(r["Wq"], 0.0864, places=4)
+
+    def test_inspecao_gases_tres_boxes_s3(self):
+        """Slide M/M/s>1/K, ex. 2: 3 boxes (s=3), 4 esperando (K=7),
+        λ=1/min, μ=1/6/min (atend. 6 min)."""
+        r = MM1K(lam=1, mu=1 / 6, k=7, s=3).calcular()
+        self.assertAlmostEqual(r["P0"], 0.00088, places=5)
+        self.assertAlmostEqual(r["L"], 6.0631, places=4)
+        self.assertAlmostEqual(r["Lq"], 3.0920, places=4)
+        self.assertAlmostEqual(r["W"], 12.2442, places=4)
+        # gabarito arredonda Wq p/ 6,2439; valor exato é W - 1/μ = 6,24425
+        self.assertAlmostEqual(r["Wq"], 6.2442, places=3)
+        # Carros/hora rejeitados = λ·60·Pk = 30,29
+        self.assertAlmostEqual(1 * 60 * r["Pk (Prob. Rejeição)"], 30.29, places=2)
+
 
 # ----------------------------------------------------------------------------
 # M/M/1/N (população finita - modelo de reparo de máquinas, 1 servidor)
@@ -254,6 +303,28 @@ class TestMM1N(unittest.TestCase):
         r = MM1N(lam=1 / 9, mu=0.5, n=3).calcular()
         self.assertAlmostEqual(r["L"], 0.7181, places=4)
         self.assertAlmostEqual(r["W"], 2.832, places=3)
+
+    def test_prob_n_trens(self):
+        """Lista M/M/sN, ex. 2c: N=6, λ=1/30/h, μ=0,15/h -> P(4 trens)=0,1353."""
+        r = MM1N(lam=1 / 30, mu=0.15, n=6).calcular(n=4, op_n="=")
+        self.assertAlmostEqual(r["Prob. n = 4"], 0.1353, places=4)
+
+    # ------------------------------------------------------------------
+    # Casos particulares com s > 1 (segundo técnico/mecânico disponível)
+    # ------------------------------------------------------------------
+    def test_forrester_segundo_tecnico_s2(self):
+        """Lista M/M/sN, ex. 4d: N=3, λ=1/9/h, μ=0,5/h, s=2 -> L=0,5528."""
+        r = MM1N(lam=1 / 9, mu=0.5, n=3, s=2).calcular()
+        self.assertAlmostEqual(r["L"], 0.5528, places=4)
+
+    def test_4m_company_dois_tecnicos_s2(self):
+        """Lista M/M/sN, ex. 6: N=4, λ=1/100/h, μ=0,1/h (reparo 10h), s=2."""
+        r = MM1N(lam=0.01, mu=0.1, n=4, s=2).calcular()
+        self.assertAlmostEqual(r["P0"], 0.6820, places=4)
+        self.assertAlmostEqual(r["L"], 0.3677, places=4)
+        self.assertAlmostEqual(r["Lq"], 0.0045, places=4)
+        self.assertAlmostEqual(r["W"], 10.1239, places=4)
+        self.assertAlmostEqual(r["Wq"], 0.1239, places=4)
 
 
 # ----------------------------------------------------------------------------
