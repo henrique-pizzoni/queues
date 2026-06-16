@@ -52,7 +52,7 @@ with tab1:
             
         elif "Prioridade" in modelo_selecionado:
             s = st.number_input("Número de Servidores (s)", min_value=1, value=1, step=1)
-            num_classes = st.number_input("Número de Classes de Prioridade", min_value=2, max_value=5, value=2, step=1)
+            num_classes = st.number_input("Número de Classes de Prioridade", min_value=2, max_value=5, value=3, step=1)
             
             st.write("**Taxas de Chegada por Classe (Ordem: 1 é a mais alta)**")
             for i in range(num_classes):
