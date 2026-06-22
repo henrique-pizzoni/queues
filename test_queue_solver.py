@@ -20,7 +20,7 @@ import unittest
 from queue_solver import (
     MM1, MMs, MG1, MM1K, MM1N,
     PriorityNonPreemptive, PriorityPreemptive,
-    reverse_rho_wq, reverse_w_lq, reverse_mu_wq,
+    reverse_rho_wq, reverse_w_lq, reverse_mu_wq, reverse_lq_lam_md1,
     prob_mm1, prob_mms_exata, prob_mms_acumulada, mms_metrics,
 )
 
@@ -98,6 +98,12 @@ class TestMM1(unittest.TestCase):
         self.assertAlmostEqual(r["Lq"], 2.25, places=4)
         self.assertAlmostEqual(r["Prob. n <= 5"], 0.822021, places=4)
         self.assertAlmostEqual(1 - r["Prob. Wq > 0.5"], 0.9384, places=4)
+
+    def test_ferramentaria_fcfs(self):
+        """Lista M/G/1, ex. 6a: λ=8/dia, μ=10/dia, FCFS -> W=0,5 dias para todos."""
+        r = MM1(lam=8, mu=10).calcular()
+        self.assertAlmostEqual(r["W"], 0.5, places=4)
+        self.assertAlmostEqual(r["Ocupação (ρ)"], 0.8, places=4)
 
     def test_sistema_instavel(self):
         """λ >= μ deve retornar erro de instabilidade."""
@@ -380,6 +386,30 @@ class TestPriorityNonPreemptive(unittest.TestCase):
         self.assertAlmostEqual(w[1], 0.35, places=4)
         self.assertAlmostEqual(w[2], 1.1, places=4)
 
+    def test_southeast_airlines_horas_atendente(self):
+        """Lista M/G/1, ex. 4d: balcão aberto 12h, ρ=0,6 -> atendente ocupado 7,2h."""
+        r = PriorityNonPreemptive(lambdas=[2, 10], mu=20, s=1).calcular()
+        self.assertAlmostEqual(r["Ocupação (ρ)"] * 12, 7.2, places=4)
+
+    def test_hospital_municipal_sem_interrupcao_s1(self):
+        """Lista M/G/1, ex. 7: 3 classes, sem interrupção, s=1.
+        λ_total=2/h, μ=3/h; 5% críticos, 20% graves, 75% estáveis.
+        Wq1=0,230  Wq2=0,276  Wq3=0,800."""
+        r = PriorityNonPreemptive(lambdas=[0.1, 0.4, 1.5], mu=3, s=1).calcular()
+        wqs = [c["Wq"] for c in r["classes"]]
+        self.assertAlmostEqual(wqs[0], 0.230, places=3)
+        self.assertAlmostEqual(wqs[1], 0.276, places=3)
+        self.assertAlmostEqual(wqs[2], 0.800, places=3)
+
+    def test_hospital_municipal_sem_interrupcao_s2(self):
+        """Lista M/G/1, ex. 7: 3 classes, sem interrupção, s=2.
+        Wq1=0,028  Wq2=0,031  Wq3=0,045."""
+        r = PriorityNonPreemptive(lambdas=[0.1, 0.4, 1.5], mu=3, s=2).calcular()
+        wqs = [c["Wq"] for c in r["classes"]]
+        self.assertAlmostEqual(wqs[0], 0.028, places=3)
+        self.assertAlmostEqual(wqs[1], 0.031, places=3)
+        self.assertAlmostEqual(wqs[2], 0.045, places=3)
+
     def test_sistema_instavel(self):
         r = PriorityNonPreemptive(lambdas=[5, 5], mu=4, s=1).calcular()
         self.assertIn("Erro", r)
@@ -396,6 +426,25 @@ class TestPriorityPreemptive(unittest.TestCase):
         self.assertAlmostEqual(w[0], 0.125, places=4)
         self.assertAlmostEqual(w[1], 0.3125, places=4)
         self.assertAlmostEqual(w[2], 1.25, places=4)
+
+    def test_hospital_municipal_com_interrupcao_s1(self):
+        """Lista M/G/1, ex. 7: 3 classes, com interrupção, s=1.
+        λ_total=2/h, μ=3/h; 5% críticos, 20% graves, 75% estáveis.
+        Wq1=0,011  Wq2=0,080  Wq3=0,867."""
+        r = PriorityPreemptive(lambdas=[0.1, 0.4, 1.5], mu=3, s=1).calcular()
+        wqs = [c["Wq"] for c in r["classes"]]
+        self.assertAlmostEqual(wqs[0], 0.011, places=3)
+        self.assertAlmostEqual(wqs[1], 0.080, places=3)
+        self.assertAlmostEqual(wqs[2], 0.867, places=3)
+
+    def test_hospital_municipal_com_interrupcao_s2(self):
+        """Lista M/G/1, ex. 7: 3 classes, com interrupção, s=2.
+        Wq1=0,00009  Wq2=0,00289  Wq3=0,05493."""
+        r = PriorityPreemptive(lambdas=[0.1, 0.4, 1.5], mu=3, s=2).calcular()
+        wqs = [c["Wq"] for c in r["classes"]]
+        self.assertAlmostEqual(wqs[0], 0.00009, delta=0.00005)
+        self.assertAlmostEqual(wqs[1], 0.00289, places=4)
+        self.assertAlmostEqual(wqs[2], 0.05493, places=3)
 
     def test_sistema_instavel(self):
         r = PriorityPreemptive(lambdas=[5, 5], mu=4, s=1).calcular()
@@ -443,6 +492,26 @@ class TestReverse(unittest.TestCase):
     def test_reverse_w_lq_sem_solucao(self):
         """Delta negativo (Lq inválido) deve retornar (None, None)."""
         lam, mu = reverse_w_lq(w=1.0, lq=-2.0)
+        self.assertIsNone(lam)
+        self.assertIsNone(mu)
+
+    def test_lq_medido_lambda_conhecido_md1(self):
+        """Lista M/G/1, ex. 3: Lq=2 medido, λ=3/h -> assume M/D/1 (σ=0).
+        ρ = -2 + √8 = 0,828 -> μ≈3,623 -> W≈0,943, L≈2,830, Wq=0,667."""
+        lam, mu = reverse_lq_lam_md1(lq=2, lam=3)
+        self.assertIsNotNone(lam)
+        self.assertIsNotNone(mu)
+        self.assertAlmostEqual(lam, 3.0, places=6)
+        self.assertAlmostEqual(mu / lam, 1 / 0.8284, places=2)  # ρ ≈ 0,828
+        r = MG1(lam=lam, mu=mu, sigma2=0).calcular()
+        self.assertAlmostEqual(r["Lq"], 2.0, places=3)
+        self.assertAlmostEqual(r["Wq"], 2 / 3, places=3)
+        self.assertAlmostEqual(r["W"], 0.943, places=2)
+        self.assertAlmostEqual(r["L"], 2.830, places=2)
+
+    def test_reverse_lq_lam_md1_sem_solucao(self):
+        """Lq=0 ou negativo deve retornar (None, None)."""
+        lam, mu = reverse_lq_lam_md1(lq=0.0, lam=3)
         self.assertIsNone(lam)
         self.assertIsNone(mu)
 

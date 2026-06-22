@@ -450,3 +450,14 @@ def reverse_w_lq(w, lq):
 def reverse_mu_wq(mu, wq):
     lam = (wq * (mu ** 2)) / (1 + wq * mu)
     return lam, mu
+
+def reverse_lq_lam_md1(lq, lam):
+    # Lq = ρ²/(2(1-ρ))  →  ρ² + 2Lq·ρ - 2Lq = 0  →  ρ = -Lq + √(Lq² + 2Lq)
+    discriminant = lq ** 2 + 2 * lq
+    if discriminant < 0:
+        return None, None
+    rho = -lq + math.sqrt(discriminant)
+    if rho <= 0 or rho >= 1:
+        return None, None
+    mu = lam / rho
+    return lam, mu
