@@ -643,5 +643,113 @@ class TestExerciciosAdicionais(unittest.TestCase):
         self.assertAlmostEqual(disponibilidade, 0.464, places=3)
 
 
+# ----------------------------------------------------------------------------
+# Exercícios adicionais das listas — cobertura dos PDFs
+# ----------------------------------------------------------------------------
+class TestExerciciosMMs(unittest.TestCase):
+    """Exercícios ainda não cobertos da Lista M/M/s."""
+
+    def test_fabrica_equipamentos_metricas(self):
+        """Lista M/M/s, ex. 1: λ=12/mês (média da tabela), μ=16/mês (de Wq=0,75 sem).
+        ρ=0,75; Lq=2,25; L=3; W=0,25; Wq=0,1875."""
+        r = MM1(lam=12, mu=16).calcular(n=4, op_n="<=")
+        self.assertAlmostEqual(r["Ocupação (ρ)"], 0.75, places=4)
+        self.assertAlmostEqual(r["Lq"], 2.25, places=4)
+        self.assertAlmostEqual(r["L"], 3.0, places=4)
+        self.assertAlmostEqual(r["W"], 0.25, places=4)
+        self.assertAlmostEqual(r["Wq"], 0.1875, places=4)
+        # c) P(N ≤ 4) = 0,7627  [equivale a P(N no sistema ≤ 4) = 1 − ρ⁵]
+        self.assertAlmostEqual(r["Prob. n <= 4"], 0.7627, places=4)
+
+    def test_fabrica_equipamentos_prob_tempo(self):
+        """Lista M/M/s, ex. 1g,h: unidade meses.
+        P(W > 20 dias = 2/3 mês) = 0,069; P(Wq > 15 dias = 0,5 mês) = 0,1015."""
+        t_w, t_wq = 20 / 30, 0.5
+        r_w  = MM1(lam=12, mu=16).calcular(t=t_w)
+        r_wq = MM1(lam=12, mu=16).calcular(t=t_wq)
+        self.assertAlmostEqual(r_w[f"Prob. W > {t_w}"],    0.069,  places=3)
+        self.assertAlmostEqual(r_wq[f"Prob. Wq > {t_wq}"], 0.1015, places=4)
+
+    def test_ingressos_cliente_chega_a_tempo(self):
+        """Lista M/M/s, ex. 4: λ=1/min, μ=3/min (20s). W=0,5 min.
+        Chega 2 min antes, gasta 0,5+1,5=2 min → sentado no início."""
+        r = MM1(lam=1, mu=3).calcular()
+        self.assertAlmostEqual(r["W"], 0.5, places=4)
+        self.assertLessEqual(r["W"] + 1.5, 2.0)
+
+    def test_torno_revolver_armazenagem(self):
+        """Lista M/M/s, ex. 11: λ=2/dia, μ=4/dia. P(N ≤ 4) = 0,97.
+        Proporção de tempo em que o espaço próximo comporta todas as peças."""
+        r = MM1(lam=2, mu=4).calcular(n=4, op_n="<=")
+        self.assertAlmostEqual(r["Prob. n <= 4"], 0.97, places=2)
+
+    def test_proporcao_sem_espera(self):
+        """Lista M/M/s, ex. 12: λ=10/h, μ=15/h. P0 = 1/3 = 0,33."""
+        r = MM1(lam=10, mu=15).calcular()
+        self.assertAlmostEqual(r["P0"], 1 / 3, places=4)
+
+    def test_grocery_atual_metricas(self):
+        """Lista M/M/s, ex. 13a: λ=1/3/min, μ=1/2/min. L=2; W=6; Wq=4; Lq=4/3; P0=1/3."""
+        r = MM1(lam=1 / 3, mu=1 / 2).calcular()
+        self.assertAlmostEqual(r["L"],           2.0,   places=4)
+        self.assertAlmostEqual(r["W"],           6.0,   places=4)
+        self.assertAlmostEqual(r["Wq"],          4.0,   places=4)
+        self.assertAlmostEqual(r["Lq"],          4 / 3, places=4)
+        self.assertAlmostEqual(r["P0"],          1 / 3, places=4)
+
+    def test_grocery_atual_probabilidades(self):
+        """Lista M/M/s, ex. 13b: P(Wq>5 min)=28,97%; P(W>7 min)=31,14%."""
+        t_wq, t_w = 5, 7
+        r_wq = MM1(lam=1 / 3, mu=1 / 2).calcular(t=t_wq)
+        r_w  = MM1(lam=1 / 3, mu=1 / 2).calcular(t=t_w)
+        self.assertAlmostEqual(r_wq[f"Prob. Wq > {t_wq}"], 0.2897, places=4)
+        self.assertAlmostEqual(r_w[f"Prob. W > {t_w}"],    0.3114, places=4)
+
+    def test_grocery_empacotador_metricas(self):
+        """Lista M/M/s, ex. 13c: λ=1/3/min, μ=2/3/min (1,5 min). L=1; W=3; Wq=1,5; Lq=0,5."""
+        r = MM1(lam=1 / 3, mu=2 / 3).calcular()
+        self.assertAlmostEqual(r["L"],  1.0, places=4)
+        self.assertAlmostEqual(r["W"],  3.0, places=4)
+        self.assertAlmostEqual(r["Wq"], 1.5, places=4)
+        self.assertAlmostEqual(r["Lq"], 0.5, places=4)
+
+    def test_grocery_empacotador_probabilidades(self):
+        """Lista M/M/s, ex. 13d: P(Wq>5 min)=9,44%; P(W>7 min)=9,70%."""
+        t_wq, t_w = 5, 7
+        r_wq = MM1(lam=1 / 3, mu=2 / 3).calcular(t=t_wq)
+        r_w  = MM1(lam=1 / 3, mu=2 / 3).calcular(t=t_w)
+        self.assertAlmostEqual(r_wq[f"Prob. Wq > {t_wq}"], 0.0944, places=4)
+        self.assertAlmostEqual(r_w[f"Prob. W > {t_w}"],    0.0970, places=4)
+
+
+class TestExerciciosMMsK(unittest.TestCase):
+    """Exercício ainda não coberto da Lista M/M/s/K."""
+
+    def test_cooperativa_patio_k4(self):
+        """Lista M/M/sk, ex. 6: λ=3/h, μ=4/h, K=4 (pátio suporta 3 caminhões).
+        Lq=0,7721; L=1,4443; W=0,5371; Wq=0,2871; Pk=0,1037."""
+        r = MM1K(lam=3, mu=4, k=4).calcular()
+        self.assertAlmostEqual(r["Lq"], 0.7721, places=4)
+        self.assertAlmostEqual(r["L"],  1.4443, places=4)
+        self.assertAlmostEqual(r["W"],  0.5371, places=4)
+        self.assertAlmostEqual(r["Wq"], 0.2871, places=4)
+        self.assertAlmostEqual(r["Pk (Prob. Rejeição)"], 0.1037, places=4)
+
+    def test_cooperativa_dois_terminais_s2(self):
+        """Lista M/M/sk, ex. 6e: mesmos parâmetros, s=2. Wq=0,0288."""
+        r = MM1K(lam=3, mu=4, k=4, s=2).calcular()
+        self.assertAlmostEqual(r["Wq"], 0.0288, places=4)
+
+
+class TestExerciciosMMsN(unittest.TestCase):
+    """Exercício ainda não coberto da Lista M/M/s/N."""
+
+    def test_mecanico_quatro_maquinas(self):
+        """Lista M/M/sN, ex. 5: N=4, λ=1/10/h, μ=1/2/h, s=1.
+        Máquinas em operação = N − L = 3,0082."""
+        r = MM1N(lam=0.1, mu=0.5, n=4).calcular()
+        self.assertAlmostEqual(4 - r["L"], 3.0082, places=3)
+
+
 if __name__ == "__main__":
-    unittest.main(verbosity=2)        
+    unittest.main(verbosity=2)
